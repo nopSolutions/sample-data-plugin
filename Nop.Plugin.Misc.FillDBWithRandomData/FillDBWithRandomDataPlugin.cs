@@ -1,4 +1,5 @@
-﻿using Nop.Core;
+﻿using System.Threading.Tasks;
+using Nop.Core;
 using Nop.Services.Common;
 using Nop.Services.Configuration;
 using Nop.Services.Plugins;
@@ -41,10 +42,11 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData
         /// <summary>
         /// Install the plugin
         /// </summary>
-        public override void Install()
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public override async Task InstallAsync()
         {
             //settings
-            _settingService.SaveSetting(new FillDBWithRandomDataSettings
+            await _settingService.SaveSettingAsync(new FillDBWithRandomDataSettings
             {
                 CountCategories = FillDBWithRandomDataDefaults.CountCategories,
                 CountProduct = FillDBWithRandomDataDefaults.CountProduct,
@@ -52,22 +54,19 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData
                 CountCustomers = FillDBWithRandomDataDefaults.CountCustomers
             });
 
-            //locales
-
-            base.Install();
+            await base.InstallAsync();
         }
 
         /// <summary>
         /// Uninstall the plugin
         /// </summary>
-        public override void Uninstall()
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public override async Task UninstallAsync()
         {
             //settings
-            _settingService.DeleteSetting<FillDBWithRandomDataSettings>();
+            await _settingService.DeleteSettingAsync<FillDBWithRandomDataSettings>();
 
-            //locales
-
-            base.Uninstall();
+            await base.UninstallAsync();
         }
 
         #endregion

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Nop.Core;
 using Nop.Core.Domain.Catalog;
@@ -27,6 +28,8 @@ using Nop.Web.Framework.Mvc.Filters;
 namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
 {
     [AutoValidateAntiforgeryToken]
+    [AuthorizeAdmin]
+    [Area(AreaNames.Admin)]
     public class FillDBWithRandomDataController : BasePluginController
     {
         #region Fields
@@ -119,12 +122,12 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
         #region Utilities
 
         /// <summary>
-        /// Prepare SendinBlueModel
+        /// Prepare configuration model
         /// </summary>
         /// <param name="model">Model</param>
-        private void PrepareModel(ConfigurationModel model)
+        private async Task PrepareModel(ConfigurationModel model)
         {
-            var fillDBWithRandomDataSettings = _settingService.LoadSetting<FillDBWithRandomDataSettings>();
+            var fillDBWithRandomDataSettings = await _settingService.LoadSettingAsync<FillDBWithRandomDataSettings>();
 
             model.CountCategories = fillDBWithRandomDataSettings.CountCategories;
             model.CountProducts = fillDBWithRandomDataSettings.CountProduct;
@@ -132,16 +135,16 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
             model.CountCustomers = fillDBWithRandomDataSettings.CountCustomers;
         }
 
-        protected virtual T InsertInstallationData<T>(T entity) where T : BaseEntity
+        protected virtual async Task<T> InsertInstallationData<T>(T entity) where T : BaseEntity
         {
-            return _dataProvider.InsertEntity(entity);
+            return await _dataProvider.InsertEntityAsync(entity);
         }
 
-        protected virtual void InsertInstallationData<T>(params T[] entities) where T : BaseEntity
+        protected virtual async Task InsertInstallationData<T>(params T[] entities) where T : BaseEntity
         {
             foreach (var entity in entities)
             {
-                InsertInstallationData(entity);
+                await InsertInstallationData(entity);
             }
         }
 
@@ -149,29 +152,25 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
 
         #region Methods
 
-        [AuthorizeAdmin]
-        [Area(AreaNames.Admin)]
-        public IActionResult Configure()
+        public async Task<IActionResult> Configure()
         {
             var model = new ConfigurationModel();
-            PrepareModel(model);
+            await PrepareModel(model);
 
             return View("~/Plugins/Misc.FillDBWithRandomData/Views/Configure.cshtml", model);
         }
 
-        [AuthorizeAdmin]
-        [Area(AreaNames.Admin)]
         [HttpPost, ActionName("Configure")]
         [FormValueRequired("create_data")]
-        public IActionResult Configure(ConfigurationModel model)
+        public async Task<IActionResult> Configure(ConfigurationModel model)
         {
             if (!ModelState.IsValid)
                 return RedirectToAction("Configure");
 
-            var customers = _customerService.GetAllCustomers()
-                .Where(customer => _customerService.IsRegistered(customer)).ToList();
+            var customers = await (await _customerService.GetAllCustomersAsync())
+                .WhereAwait(async customer => await _customerService.IsRegisteredAsync(customer)).ToListAsync();
 
-            var categories = _categoryService.GetAllCategories();
+            var categories = await _categoryService.GetAllCategoriesAsync();
             
             //default store
             var defaultStore = _storeRepository.Table.FirstOrDefault();
@@ -198,15 +197,13 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                         CreatedOnUtc = DateTime.UtcNow,
                         UpdatedOnUtc = DateTime.UtcNow
                     };
+                                       
+                    category.ParentCategoryId = categories[_random.Next(categories.Count)].Id;
 
-                    var allCategories = _categoryService.GetAllCategories();
-
-                    category.ParentCategoryId = allCategories[_random.Next(allCategories.Count)].Id;
-
-                    _categoryService.InsertCategory(category);
+                    await _categoryService.InsertCategoryAsync(category);
 
                     //search engine names for category
-                    _urlRecordRepository.Insert(new UrlRecord
+                    await _urlRecordRepository.InsertAsync(new UrlRecord
                     {
                         EntityId = category.Id,
                         EntityName = nameof(Category),
@@ -218,7 +215,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
             }
             catch (Exception exc)
             {
-                _notificationService.ErrorNotification(exc);
+                await _notificationService.ErrorNotificationAsync(exc);
                 return RedirectToAction("Configure");
             }
 
@@ -228,8 +225,6 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
 
             try
             {
-                categories = _categoryService.GetAllCategories();
-
                 //_encryptionService.CreateSaltKey(20),
                 for (var i = 0; i < model.CountProducts; i++)
                 {
@@ -267,10 +262,10 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                         UpdatedOnUtc = DateTime.UtcNow
                     };
 
-                    _productService.InsertProduct(product);
+                    await _productService.InsertProductAsync(product);
 
                     //search engine names for product
-                    _urlRecordRepository.Insert(new UrlRecord
+                    await _urlRecordRepository.InsertAsync(new UrlRecord
                     {
                         EntityId = product.Id,
                         EntityName = nameof(Product),
@@ -283,7 +278,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                     {
                         var categoryId = categories[_random.Next(categories.Count)].Id;
 
-                        _productCategoryRepository.Insert(new ProductCategory
+                        await _productCategoryRepository.InsertAsync(new ProductCategory
                         {
                             ProductId = product.Id,
                             CategoryId = categoryId,
@@ -294,7 +289,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
             }
             catch (Exception exc)
             {
-                _notificationService.ErrorNotification(exc);
+                await _notificationService.ErrorNotificationAsync(exc);
                 return RedirectToAction("Configure");
             }
             #endregion
@@ -324,7 +319,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                         RegisteredInStoreId = defaultStore.Id
                     };
 
-                    var defaultUserAddress = InsertInstallationData(
+                    var defaultUserAddress = await InsertInstallationData(
                         new Address
                         {
                             FirstName = $"FirstName_{i}",
@@ -345,17 +340,17 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                     curUser.BillingAddressId = defaultUserAddress.Id;
                     curUser.ShippingAddressId = defaultUserAddress.Id;
 
-                    _customerRepository.Insert(curUser);
+                    await _customerRepository.InsertAsync(curUser);
 
-                    InsertInstallationData(new CustomerAddressMapping { CustomerId = curUser.Id, AddressId = defaultUserAddress.Id });
-                    InsertInstallationData(new CustomerCustomerRoleMapping { CustomerId = curUser.Id, CustomerRoleId = crRegistered.Id });
+                    await InsertInstallationData(new CustomerAddressMapping { CustomerId = curUser.Id, AddressId = defaultUserAddress.Id });
+                    await InsertInstallationData(new CustomerCustomerRoleMapping { CustomerId = curUser.Id, CustomerRoleId = crRegistered.Id });
 
                     //set default customer name
-                    _genericAttributeService.SaveAttribute(curUser, NopCustomerDefaults.FirstNameAttribute, defaultUserAddress.FirstName);
-                    _genericAttributeService.SaveAttribute(curUser, NopCustomerDefaults.LastNameAttribute, defaultUserAddress.LastName);
+                    await _genericAttributeService.SaveAttributeAsync(curUser, NopCustomerDefaults.FirstNameAttribute, defaultUserAddress.FirstName);
+                    await _genericAttributeService.SaveAttributeAsync(curUser, NopCustomerDefaults.LastNameAttribute, defaultUserAddress.LastName);
 
                     //set customer password
-                    _customerPasswordRepository.Insert(new CustomerPassword
+                    await _customerPasswordRepository.InsertAsync(new CustomerPassword
                     {
                         CustomerId = curUser.Id,
                         Password = "123456",
@@ -367,7 +362,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
             }
             catch (Exception exc)
             {
-                _notificationService.ErrorNotification(exc);
+                await _notificationService.ErrorNotificationAsync(exc);
                 return RedirectToAction("Configure");
             }
             #endregion
@@ -376,7 +371,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
 
             try
             {
-                var allCustomers = _customerService.GetAllCustomers();
+                var allCustomers = await _customerService.GetAllCustomersAsync();
                 var languageId = _languageRepository.Table.First().Id;
                 var allProducts = _productRepository.Table.Count();
 
@@ -442,9 +437,9 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                         CustomOrderNumber = string.Empty
                     };
 
-                    _orderRepository.Insert(order);
+                    await _orderRepository.InsertAsync(order);
                     order.CustomOrderNumber = order.Id.ToString();
-                    _orderRepository.Update(order);
+                    await _orderRepository.UpdateAsync(order);
 
                     //Add order items
                     for (var j = 0; j < _random.Next(1, 5); j++)
@@ -473,7 +468,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                             RentalStartDateUtc = null,
                             RentalEndDateUtc = null
                         };
-                        _orderItemRepository.Insert(orderItem);
+                        await _orderItemRepository.InsertAsync(orderItem);
 
                         //Add gift card
                         if (_random.Next(3) == 1)
@@ -493,7 +488,7 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                                 IsRecipientNotified = false,
                                 CreatedOnUtc = DateTime.UtcNow
                             };
-                            _giftCardRepository.Insert(giftCard);
+                            await _giftCardRepository.InsertAsync(giftCard);
                         }
                     }
 
@@ -502,16 +497,16 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                     {
                         var curNote = string.Empty;
 
-                        _ = (k switch
+                        _ = k switch
                         {
                             0 => curNote = "Order placed",
                             1 => curNote = "Order paid",
                             2 => curNote = "Order shipped",
                             3 => curNote = "Order delivered",
                             _ => throw new NotImplementedException()
-                        });
+                        };
 
-                        _orderNoteRepository.Insert(new OrderNote
+                        await _orderNoteRepository.InsertAsync(new OrderNote
                         {
                             CreatedOnUtc = DateTime.UtcNow,
                             Note = curNote,
@@ -522,21 +517,21 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
             }
             catch (Exception exc)
             {
-                _notificationService.ErrorNotification(exc);
+                await _notificationService.ErrorNotificationAsync(exc);
                 return RedirectToAction("Configure");
             }
             #endregion
 
             _notificationService.SuccessNotification("Generate complete!");
 
-            var fillDBWithRandomDataSettings = _settingService.LoadSetting<FillDBWithRandomDataSettings>();
+            var fillDBWithRandomDataSettings = await _settingService.LoadSettingAsync<FillDBWithRandomDataSettings>();
 
             fillDBWithRandomDataSettings.CountCategories = model.CountCategories;
             fillDBWithRandomDataSettings.CountProduct = model.CountProducts;
             fillDBWithRandomDataSettings.CountOrders = model.CountOrders;
             fillDBWithRandomDataSettings.CountCustomers = model.CountCustomers;
 
-            _settingService.SaveSetting(fillDBWithRandomDataSettings);
+            await _settingService.SaveSettingAsync(fillDBWithRandomDataSettings);
 
             return RedirectToAction("Configure");
         }
