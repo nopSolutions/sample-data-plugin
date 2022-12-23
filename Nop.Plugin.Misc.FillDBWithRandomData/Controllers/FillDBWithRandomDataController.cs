@@ -195,10 +195,9 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
                         Published = true,
                         DisplayOrder = 1,
                         CreatedOnUtc = DateTime.UtcNow,
-                        UpdatedOnUtc = DateTime.UtcNow
+                        UpdatedOnUtc = DateTime.UtcNow,
+                        ParentCategoryId = categories[_random.Next(categories.Count)].Id
                     };
-                                       
-                    category.ParentCategoryId = categories[_random.Next(categories.Count)].Id;
 
                     await _categoryService.InsertCategoryAsync(category);
 
@@ -339,15 +338,13 @@ namespace Nop.Plugin.Misc.FillDBWithRandomData.Controllers
 
                     curUser.BillingAddressId = defaultUserAddress.Id;
                     curUser.ShippingAddressId = defaultUserAddress.Id;
+                    curUser.FirstName = defaultUserAddress.FirstName;
+                    curUser.LastName = defaultUserAddress.LastName;
 
                     await _customerRepository.InsertAsync(curUser);
 
                     await InsertInstallationData(new CustomerAddressMapping { CustomerId = curUser.Id, AddressId = defaultUserAddress.Id });
                     await InsertInstallationData(new CustomerCustomerRoleMapping { CustomerId = curUser.Id, CustomerRoleId = crRegistered.Id });
-
-                    //set default customer name
-                    await _genericAttributeService.SaveAttributeAsync(curUser, NopCustomerDefaults.FirstNameAttribute, defaultUserAddress.FirstName);
-                    await _genericAttributeService.SaveAttributeAsync(curUser, NopCustomerDefaults.LastNameAttribute, defaultUserAddress.LastName);
 
                     //set customer password
                     await _customerPasswordRepository.InsertAsync(new CustomerPassword
